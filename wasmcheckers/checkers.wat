@@ -15,7 +15,7 @@
   )
 
   ;; Byte Offset for Checkboard Position = ( x + y * 8 ) * 4
-  (func $offsetForPosition (param $x i32) (param $y i32) (result i32)
+  (func $byteOffsetForPosition (param $x i32) (param $y i32) (result i32)
     (i32.mul
       (call $indexForPosition (get_local $x) (get_local $y))
       (i32.const 4)
@@ -60,7 +60,54 @@
     (i32.and (get_local $piece) (i32.const 3))
   )
 
-  (export "offsetForPosition" (func $offsetForPosition))
+  ;; Sets a piece on the board.
+  (func $setPiece (param $x i32) (param $y i32) (param $piece i32)
+    (i32.store
+      (call $byteOffsetForPosition
+        (get_local $x)
+        (get_local $y)
+      )
+      (get_local $piece)
+    )
+  )
+
+  ;; Gets a piece from the board. Out of range causes a trap
+  (func $getPiece (param $x i32) (param $y i32) (result i32)
+    (if (result i32)
+      (block (result i32)
+        (i32.and
+          (call $inRange
+            (i32.const 0)
+            (i32.const 7)
+            (get_local $x)
+          )
+          (call $inRange
+            (i32.const 0)
+            (i32.const 7)
+            (get_local $y)
+          )
+        )
+      )
+    (then
+      (i32.load
+        (call $offsetForPosition
+          (get_local $x)
+          (get_local $y))
+      )
+    )
+    (else
+      (unreachable)
+    )
+  )
+
+;; Detect if values are within range (inclusive high and low)
+(func $inRange (param $low i32) (param $high i32) (param $value i32) (result i32)
+  (i32.and
+    (i32.ge_s (get_local $value) (get_local $low))
+    (i32.le_s (get_local $value) (get_local $high))
+)
+
+  (export "byteOffsetForPosition" (func $byteOffsetForPosition))
   (export "isCrowned" (func $isCrowned))
   (export "isWhite" (func $isWhite))
   (export "isBlack" (func $isBlack))
