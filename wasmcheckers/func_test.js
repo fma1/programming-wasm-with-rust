@@ -9,7 +9,7 @@ fetch('./func_test.wasm').then(response =>
   var crowned_white = 6;
   var crowned_black = 5;
   console.log("Calling offset");
-  var offset = instance.exports.byteOffsetForPosition(3,4);
+  var offset = instance.exports.offsetForPosition(3,4);
   console.log("Offset for 3,4 is ",offset);
   // Note: console.debug() needs log level to be verbose in Chrome DevToos
   console.debug("White is white?", instance.exports.isWhite(white));

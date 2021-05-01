@@ -1,4 +1,10 @@
 (module
+  (import "events" "piecemoved"
+    (func $notify_piecemoved (param $fromX i32) (param $fromY i32)
+                            (param $toX i32) (param $toY i32)))
+  (import "events" "piececrowned"
+    (func $notify_piececrowned (param $pieceX i32) (param $pieceY i32)))
+
   (memory $mem 1)
   (global $currentTurn (mut i32) (i32.const 0))
   (global $WHITE i32 (i32.const 2))
@@ -89,15 +95,16 @@
           )
         )
       )
-    (then
-      (i32.load
-        (call $offsetForPosition
-          (get_local $x)
-          (get_local $y))
+      (then
+        (i32.load
+          (call $byteOffsetForPosition
+            (get_local $x)
+            (get_local $y))
+        )
       )
-    )
-    (else
-      (unreachable)
+      (else
+        (unreachable)
+      )
     )
   )
 
@@ -106,6 +113,7 @@
     (i32.and
       (i32.ge_s (get_local $value) (get_local $low))
       (i32.le_s (get_local $value) (get_local $high))
+    )
   )
 
   ;; Gets the current turn owner (white or black)
@@ -175,10 +183,137 @@
     (i32.sub (get_local $x) (get_local $y))
   )
 
+  ;; Determine if the move is valid
+  (func $isValidMove (param $fromX i32) (param $fromY i32) 
+    (param $toX i32) (param $toY i32) (result i32)
+    (local $player i32)
+    (local $target i32)
+    
+    (set_local $player (call $getPiece (get_local $fromX) (get_local $fromY)))
+    (set_local $target (call $getPiece (get_local $toX) (get_local $toY)))
+    
+    (if (result i32)
+      (block (result i32)
+        (i32.and
+          (call $validJumpDistance (get_local $fromY) (get_local $toY))
+          (i32.and
+            (call $isPlayersTurn (get_local $player))
+            (i32.eq (get_local $target) (i32.const 0)) ;; target must be unoccupied
+          )
+        )
+      )
+      (then
+        (i32.const 1)
+      )
+      (else
+        (i32.const 0)
+      )
+    )
+  )
+
+  ;; Ensures travel is 1 or 2 squares
+  (func $validJumpDistance (param $from i32) (param $to i32) (result i32)
+    (local $d i32)
+    (set_local $d
+    (if (result i32)
+      (i32.gt_s (get_local $to) (get_local $from))
+      (then
+        (call $distance (get_local $to) (get_local $from))
+      )
+      (else
+        (call $distance (get_local $from) (get_local $to))
+      ))
+    )
+    (i32.le_u
+      (get_local $d)
+      (i32.const 2)
+    )
+  )
+
+  ;; Exported move function to be called by the game host
+  (func $move (param $fromX i32) (param $fromY i32)
+    (param $toX i32) (param $toY i32) (result i32)
+    (if (result i32)
+      (block (result i32)
+        (call $isValidMove (get_local $fromX) (get_local $fromY)
+                          (get_local $toX) (get_local $toY))
+      )
+      (then
+        (call $do_move (get_local $fromX) (get_local $fromY)
+                      (get_local $toX) (get_local $toY))
+      )
+      (else
+        (i32.const 0)
+      )
+    )
+  )
+
+  ;; Internal move function, performs actual move post-validation of target.
+  ;; Currently not handled:
+  ;; - removing opponent piece during a jump
+  ;; - detecting win condition
+  (func $do_move (param $fromX i32) (param $fromY i32)
+                (param $toX i32) (param $toY i32) (result i32)
+    (local $curpiece i32)
+    (set_local $curpiece (call $getPiece (get_local $fromX)(get_local $fromY)))
+  
+    (call $toggleTurnOwner)
+    (call $setPiece (get_local $toX) (get_local $toY) (get_local $curpiece))
+    (call $setPiece (get_local $fromX) (get_local $fromY) (i32.const 0))
+    (if (call $shouldCrown (get_local $toY) (get_local $curpiece))
+      (then (call $crownPiece (get_local $toX) (get_local $toY))))
+    (call $notify_piecemoved (get_local $fromX) (get_local $fromY)
+                            (get_local $toX) (get_local $toY))
+    (i32.const 1)
+  )
+
+  ;; Manually place each piece on the board to initialize the game
+  (func $initBoard
+    ;; Place the white pieces at the top of the board
+    (call $setPiece (i32.const 1) (i32.const 0) (get_global $WHITE))
+    (call $setPiece (i32.const 3) (i32.const 0) (get_global $WHITE))
+    (call $setPiece (i32.const 5) (i32.const 0) (get_global $WHITE))
+    (call $setPiece (i32.const 7) (i32.const 0) (get_global $WHITE))
+
+    (call $setPiece (i32.const 0) (i32.const 1) (get_global $WHITE))
+    (call $setPiece (i32.const 2) (i32.const 1) (get_global $WHITE))
+    (call $setPiece (i32.const 4) (i32.const 1) (get_global $WHITE))
+    (call $setPiece (i32.const 6) (i32.const 1) (get_global $WHITE))
+
+    (call $setPiece (i32.const 1) (i32.const 2) (get_global $WHITE))
+    (call $setPiece (i32.const 3) (i32.const 2) (get_global $WHITE))
+    (call $setPiece (i32.const 5) (i32.const 2) (get_global $WHITE))
+    (call $setPiece (i32.const 7) (i32.const 2) (get_global $WHITE))
+
+    ;; Place the black pieces at the bottom of the board
+    (call $setPiece (i32.const 0) (i32.const 5) (get_global $BLACK))
+    (call $setPiece (i32.const 2) (i32.const 5) (get_global $BLACK))
+    (call $setPiece (i32.const 4) (i32.const 5) (get_global $BLACK))
+    (call $setPiece (i32.const 6) (i32.const 5) (get_global $BLACK))
+
+    (call $setPiece (i32.const 1) (i32.const 6) (get_global $BLACK))
+    (call $setPiece (i32.const 3) (i32.const 6) (get_global $BLACK))
+    (call $setPiece (i32.const 5) (i32.const 6) (get_global $BLACK))
+    (call $setPiece (i32.const 7) (i32.const 6) (get_global $BLACK))
+
+    (call $setPiece (i32.const 0) (i32.const 7) (get_global $BLACK))
+    (call $setPiece (i32.const 2) (i32.const 7) (get_global $BLACK))
+    (call $setPiece (i32.const 4) (i32.const 7) (get_global $BLACK))
+    (call $setPiece (i32.const 6) (i32.const 7) (get_global $BLACK))
+
+    ;; Black goes first
+    (call $setTurnOwner (get_global $BLACK))
+  )
+
   (export "byteOffsetForPosition" (func $byteOffsetForPosition))
   (export "isCrowned" (func $isCrowned))
   (export "isWhite" (func $isWhite))
   (export "isBlack" (func $isBlack))
   (export "withCrown" (func $withCrown))
   (export "withoutCrown" (func $withoutCrown))
+  (export "getPiece" (func $getPiece))
+  (export "initBoard" (func $initBoard))
+  (export "getTurnOwner" (func $getTurnOwner))
+  (export "move" (func $move))
+  (export "memory" (memory $mem))
 )
