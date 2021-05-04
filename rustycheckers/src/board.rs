@@ -31,8 +31,8 @@ impl GamePiece {
 pub struct Coordinate(pub usize, pub usize);
 
 impl Coordinate {
-    pub fn on_board(self) -> bool {
-        let Coordinate(x, y) = self;
+    pub fn on_board(&self) -> bool {
+        let Coordinate(x, y) = *self;
         x <= 7 && y <= 7
     }
 
